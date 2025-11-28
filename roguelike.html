@@ -396,29 +396,67 @@ function render() {
         ctx.fill();
     }
 
-    // enemies
-    for (let e of enemies) {
-        ctx.fillStyle = e.color;
+    // enemies (with border + health bar)
+for (let e of enemies) {
 
-        if (e.shape === "circle") {
-            ctx.beginPath();
-            ctx.arc(e.x, e.y, e.size, 0, Math.PI*2);
-            ctx.fill();
-        }
+    // Draw shape fill
+    ctx.fillStyle = e.color;
 
-        if (e.shape === "square") {
-            ctx.fillRect(e.x-e.size, e.y-e.size, e.size*2, e.size*2);
-        }
+    if (e.shape === "circle") {
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+        ctx.fill();
 
-        if (e.shape === "triangle") {
-            ctx.beginPath();
-            ctx.moveTo(e.x, e.y-e.size);
-            ctx.lineTo(e.x-e.size, e.y+e.size);
-            ctx.lineTo(e.x+e.size, e.y+e.size);
-            ctx.closePath();
-            ctx.fill();
-        }
+        // Border
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "black";
+        ctx.stroke();
     }
+
+    if (e.shape === "square") {
+        ctx.fillRect(e.x - e.size, e.y - e.size, e.size * 2, e.size * 2);
+
+        // Border
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "black";
+        ctx.strokeRect(e.x - e.size, e.y - e.size, e.size * 2, e.size * 2);
+    }
+
+    if (e.shape === "triangle") {
+        ctx.beginPath();
+        ctx.moveTo(e.x, e.y - e.size);
+        ctx.lineTo(e.x - e.size, e.y + e.size);
+        ctx.lineTo(e.x + e.size, e.y + e.size);
+        ctx.closePath();
+        ctx.fill();
+
+        // Border
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "black";
+        ctx.stroke();
+    }
+
+    // ----------------------------
+    // HEALTH BAR
+    // ----------------------------
+    let barWidth = 30;
+    let barHeight = 5;
+
+    if (e.maxHp === undefined) e.maxHp = e.hp;
+    let healthPercent = e.hp / e.maxHp;
+
+    let barX = e.x - barWidth/2;
+    let barY = e.y - e.size - 12;
+
+    // Background
+    ctx.fillStyle = "black";
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+
+    // Health fill
+    ctx.fillStyle = "lime";
+    ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+}
+
 
     // UI
     ctx.fillStyle = "black";
