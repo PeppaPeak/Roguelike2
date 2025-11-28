@@ -4,7 +4,7 @@
 <title>Roguelike</title>
 <style>
     body { margin: 0; overflow: hidden; background: white; }
-    canvas { display: block; margin: 0 auto; background: white; }
+    canvas { display: block; margin: 0 auto; background: white; border: 6px solid black; }
     #cardContainer {
         position: absolute;
         top: 50%; left: 50%;
@@ -26,7 +26,6 @@
 <body>
 
 <canvas id="gameCanvas"></canvas>
-
 <div id="cardContainer"></div>
 
 <script>
@@ -71,7 +70,6 @@ function spawnEnemies() {
     for (let i = 0; i < count; i++) {
         let type = "circle";
 
-        // After wave 3 include new enemy types
         if (wave >= 3) {
             let r = Math.random();
             if (r < 0.3) type = "square";
@@ -83,25 +81,28 @@ function spawnEnemies() {
 }
 
 function makeEnemy(type) {
-    let hp, speed, size, damage;
+    let hp, speed, size, damage, color;
 
     if (type === "circle") {
         hp = 8 + wave;
         speed = 1.2;
         size = 18;
         damage = 10;
+        color = "red";
     }
     if (type === "square") {
-        hp = 20 + wave*2;
+        hp = 22 + wave*2;
         speed = 0.6;
         size = 25;
         damage = 15;
+        color = "#cc0000";
     }
     if (type === "triangle") {
         hp = 5;
-        speed = 2.2;
+        speed = 2.4;
         size = 16;
         damage = 5;
+        color = "#ff4444";
     }
 
     let angle = Math.random() * Math.PI * 2;
@@ -110,7 +111,7 @@ function makeEnemy(type) {
         y: player.y + Math.sin(angle)*500,
         hp, maxHp: hp,
         speed, size, damage,
-        type
+        type, color
     };
 }
 
@@ -125,88 +126,15 @@ let weapons = {
         count: 1,
         angle: 0
     },
-    // tons of extra weapons added:
-    shooter: { unlocked: false, damage: 3, rate: 60, cooldown: 0 },
-    flameAura: { unlocked: false, damage: 0.5, radius: 80 },
-    daggerBurst: { unlocked: false, damage: 5, rate: 70, cooldown: 0 },
+    shooter: { unlocked: true, damage: 3, rate: 30, cooldown: 0 },
+    flameAura: { unlocked: true, damage: 0.5, radius: 80 },
+    daggerBurst: { unlocked: true, damage: 5, rate: 70, cooldown: 0 },
 };
 let projectiles = [];
 
 // ===============================
-// CARD UPGRADES
+// COMBAT
 // ===============================
-const allCards = [
-    { name: "More Orb Damage", apply: () => weapons.rotatingOrb.damage++ },
-    { name: "More Orbs", apply: () => weapons.rotatingOrb.count++ },
-    { name: "Faster Orb", apply: () => weapons.rotatingOrb.speed += 0.01 },
-    { name: "Unlock Shooter", apply: () => weapons.shooter.unlocked = true },
-    { name: "Shooter Damage", apply: () => weapons.shooter.damage++ },
-    { name: "Unlock Flame Aura", apply: () => weapons.flameAura.unlocked = true },
-    { name: "Aura Damage", apply: () => weapons.flameAura.damage += 0.3 },
-    { name: "Unlock Daggers", apply: () => weapons.daggerBurst.unlocked = true },
-    { name: "Dagger Damage", apply: () => weapons.daggerBurst.damage++, },
-];
-
-// ===============================
-// GAME LOOP
-// ===============================
-function update() {
-
-    // ---- Movement ----
-    if (keys["w"]) player.y -= player.speed;
-    if (keys["s"]) player.y += player.speed;
-    if (keys["a"]) player.x -= player.speed;
-    if (keys["d"]) player.x += player.speed;
-
-    // ---- Enemies ----
-    enemies.forEach(e => {
-        let angle = Math.atan2(player.y - e.y, player.x - e.x);
-        e.x += Math.cos(angle) * e.speed;
-        e.y += Math.sin(angle) * e.speed;
-
-        // Collision dmg
-        if (dist(player, e) < player.size + e.size) {
-            player.hp -= e.damage * 0.05;
-        }
-    });
-
-    // ---- Weapons ----
-    updateOrbWeapon();
-    updateShooter();
-    updateDaggers();
-    updateProjectiles();
-
-    // ---- Kill / XP ----
-    enemies = enemies.filter(e => {
-        if (e.hp <= 0) {
-            player.xp += 10;
-            return false;
-        }
-        return true;
-    });
-
-    // ---- Level Up ----
-    if (player.xp >= player.level * 50) {
-        player.level++;
-        showCards();
-    }
-
-    // ---- New Wave ----
-    if (enemies.length === 0) {
-        wave++;
-        spawnEnemies();
-    }
-}
-
-function dist(a, b) {
-    return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-// ===============================
-// WEAPON FUNCTIONS
-// ===============================
-
-// --- Rotating Orb ---
 function updateOrbWeapon() {
     let w = weapons.rotatingOrb;
     w.angle += w.speed;
@@ -218,19 +146,17 @@ function updateOrbWeapon() {
 
         enemies.forEach(e => {
             if (Math.hypot(ox - e.x, oy - e.y) < e.size + 5) {
-                e.hp -= w.damage * 0.2;
+                e.hp -= w.damage * 0.4;
             }
         });
 
-        // Draw orb
-        ctx.fillStyle = "blue";
+        ctx.fillStyle = "cyan";
         ctx.beginPath();
         ctx.arc(ox, oy, 6, 0, Math.PI*2);
         ctx.fill();
     }
 }
 
-// --- Shooter (fires bullets) ---
 function updateShooter() {
     let w = weapons.shooter;
     if (!w.unlocked) return;
@@ -239,7 +165,6 @@ function updateShooter() {
     else {
         w.cooldown = w.rate;
 
-        // Shoot nearest enemy
         if (enemies.length > 0) {
             let target = enemies[0];
             projectiles.push({
@@ -253,7 +178,6 @@ function updateShooter() {
     }
 }
 
-// --- Daggers ---
 function updateDaggers() {
     let w = weapons.daggerBurst;
     if (!w.unlocked) return;
@@ -281,7 +205,7 @@ function updateProjectiles() {
         p.y += p.vy;
 
         enemies.forEach(e => {
-            if (dist(e, p) < e.size) {
+            if (Math.hypot(p.x - e.x, p.y - e.y) < e.size) {
                 e.hp -= p.damage;
                 p.dead = true;
             }
@@ -292,29 +216,38 @@ function updateProjectiles() {
 }
 
 // ===============================
-// CARDS (UPGRADES)
+// UPDATE
 // ===============================
-function showCards() {
-    let container = document.getElementById("cardContainer");
-    container.innerHTML = "";
-    container.style.display = "flex";
+function update() {
 
-    let picks = [];
-    while (picks.length < 3) {
-        let c = allCards[Math.floor(Math.random()*allCards.length)];
-        if (!picks.includes(c)) picks.push(c);
-    }
+    // Movement
+    if (keys["w"]) player.y -= player.speed;
+    if (keys["s"]) player.y += player.speed;
+    if (keys["a"]) player.x -= player.speed;
+    if (keys["d"]) player.x += player.speed;
 
-    picks.forEach(card => {
-        let div = document.createElement("div");
-        div.className = "card";
-        div.innerHTML = `<h3>${card.name}</h3>`;
-        div.onclick = () => {
-            card.apply();
-            container.style.display = "none";
-        };
-        container.appendChild(div);
+    // Map boundaries
+    player.x = Math.max(20, Math.min(canvas.width - 20, player.x));
+    player.y = Math.max(20, Math.min(canvas.height - 20, player.y));
+
+    // Enemies
+    enemies.forEach(e => {
+        let angle = Math.atan2(player.y - e.y, player.x - e.x);
+        e.x += Math.cos(angle) * e.speed;
+        e.y += Math.sin(angle) * e.speed;
     });
+
+    updateOrbWeapon();
+    updateShooter();
+    updateDaggers();
+    updateProjectiles();
+
+    enemies = enemies.filter(e => e.hp > 0);
+
+    if (enemies.length === 0) {
+        wave++;
+        spawnEnemies();
+    }
 }
 
 // ===============================
@@ -334,54 +267,14 @@ function draw() {
         ctx.strokeStyle = "black";
         ctx.lineWidth = 3;
 
+        ctx.fillStyle = e.color;
+
         if (e.type === "circle") {
-            ctx.fillStyle = "red";
             ctx.beginPath();
             ctx.arc(e.x, e.y, e.size, 0, Math.PI*2);
-            ctx.fill();
-            ctx.stroke();
+            ctx.fill(); ctx.stroke();
         }
 
         if (e.type === "square") {
-            ctx.fillStyle = "red";
             ctx.fillRect(e.x - e.size, e.y - e.size, e.size*2, e.size*2);
-            ctx.strokeRect(e.x - e.size, e.y - e.size, e.size*2, e.size*2);
-        }
-
-        if (e.type === "triangle") {
-            ctx.fillStyle = "red";
-            ctx.beginPath();
-            ctx.moveTo(e.x, e.y - e.size);
-            ctx.lineTo(e.x - e.size, e.y + e.size);
-            ctx.lineTo(e.x + e.size, e.y + e.size);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-        }
-
-        // ---- HEALTH BAR ----
-        ctx.fillStyle = "black";
-        ctx.fillRect(e.x - e.size, e.y - e.size - 10, e.size*2, 6);
-        ctx.fillStyle = "lime";
-        ctx.fillRect(e.x - e.size, e.y - e.size - 10, (e.hp/e.maxHp) * (e.size*2), 6);
-    });
-
-    // Projectiles
-    ctx.fillStyle = "black";
-    projectiles.forEach(p => {
-        ctx.fillRect(p.x-3, p.y-3, 6, 6);
-    });
-}
-
-function gameLoop() {
-    update();
-    draw();
-    requestAnimationFrame(gameLoop);
-}
-
-spawnEnemies();
-gameLoop();
-</script>
-
-</body>
-</html>
+            ctx.strokeRect(e.x -
