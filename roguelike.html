@@ -1,660 +1,434 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-<meta charset="utf-8" />
-<title>Mini Roguelike — Single Script</title>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Roguelike</title>
+<meta charset="UTF-8">
 <style>
-  html,body { height:100%; margin:0; font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial; background:#fff;}
-  #game { display:block; margin:0 auto; background:#ffffff; border:1px solid #ddd; image-rendering: optimizeSpeed; }
-  .hud {
-    position:fixed; left:12px; top:12px; padding:10px 12px; background:rgba(255,255,255,0.9);
-    border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,0.08);
-  }
-  .hud .bar { width:220px; height:12px; background:#eee; border-radius:6px; overflow:hidden; margin-bottom:6px;}
-  .hud .bar > i { display:block; height:100%; background:linear-gradient(90deg,#3bb1ff,#0066ff);}
-  .hud div { margin-bottom:6px; font-size:14px; color:#222;}
-  .overlay {
-    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
-    background:rgba(0,0,0,0.45); z-index:30;
-  }
-  .card-grid {
-    display:grid; grid-template-columns:repeat(3, 260px); gap:16px; padding:20px; background:white;
-    border-radius:14px; box-shadow:0 10px 40px rgba(0,0,0,0.3);
-  }
-  .card {
-    padding:14px; border-radius:10px; background:linear-gradient(180deg,#fff,#fafafa); cursor:pointer;
-    border:1px solid #eee; display:flex; flex-direction:column; gap:8px; min-height:140px;
-  }
-  .card h3 { margin:0; font-size:16px; color:#111 }
-  .card p { margin:0; font-size:13px; color:#444 }
-  .muted { color:#777; font-size:12px }
-  .center { text-align:center }
-  .small { font-size:12px }
-  footer { position:fixed; right:12px; bottom:12px; color:#666; font-size:13px }
+    body { margin:0; background:#fff; overflow:hidden; }
+    canvas { background:white; display:block; margin:0 auto; }
 </style>
 </head>
 <body>
 <canvas id="game" width="900" height="600"></canvas>
 
-<div class="hud" id="hud">
-  <div><strong>HP</strong></div>
-  <div class="bar"><i id="hpBar" style="width:100%"></i></div>
-  <div id="stats">XP: 0 &nbsp;|&nbsp; Level: 1 &nbsp;|&nbsp; Weapon: Rotating Orb</div>
-  <div class="muted small">Move: WASD / Arrows</div>
-</div>
-
-<footer>Single-file roguelike • Kill enemies for XP & choose upgrades</footer>
-
 <script>
-// ==========================
-// Single-file Roguelike
-// ==========================
-(() => {
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  const hud = {
-    hpBar: document.getElementById('hpBar'),
-    stats: document.getElementById('stats'),
-  };
+// ---------------------------------------------------
+// CANVAS
+// ---------------------------------------------------
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
-  // --- Utilities ----------------
-  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-  function rand(min, max) { return Math.random() * (max - min) + min; }
-  function randInt(min, max) { return Math.floor(rand(min, max+1)); }
-  function dist(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.sqrt(dx*dx+dy*dy); }
-  function angleTo(a,b){ return Math.atan2(b.y-a.y, b.x-a.x); }
-  function circleCollision(a,b){ return dist(a,b) <= (a.r + b.r); }
+const W = canvas.width;
+const H = canvas.height;
 
-  // --- Game config --------------
-  const CONFIG = {
-    spawnInterval: 1200, // ms
-    enemyBaseHp: 6,
-    enemyBaseSpeed: 0.6,
-    xpPerKill: 1,
-    xpToLevel: 3, // increases per level
-    playerMaxHp: 20,
-    frameStep: 1000/60
-  };
+// ---------------------------------------------------
+// PLAYER
+// ---------------------------------------------------
+const player = {
+    x: W/2,
+    y: H/2,
+    size: 15,
+    speed: 3,
+    hp: 100,
+    maxHp: 100,
+    xp: 0,
+    level: 1,
+    xpNeeded: 30
+};
 
-  // --- Input --------------------
-  const input = { up:false,down:false,left:false,right:false };
-  window.addEventListener('keydown', e => {
-    if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') input.up = true;
-    if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') input.down = true;
-    if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') input.left = true;
-    if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') input.right = true;
-  });
-  window.addEventListener('keyup', e => {
-    if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') input.up = false;
-    if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') input.down = false;
-    if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') input.left = false;
-    if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') input.right = false;
-  });
+let keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup",   e => keys[e.key] = false);
 
-  // mouse for aiming / clicking cards
-  const mouse = { x:0,y:0,down:false };
-  canvas.addEventListener('mousemove', e => {
-    const rect = canvas.getBoundingClientRect();
-    mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width);
-    mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height);
-  });
-  canvas.addEventListener('mousedown', e => mouse.down = true);
-  canvas.addEventListener('mouseup', e => mouse.down = false);
+// ---------------------------------------------------
+// ENEMIES
+// All enemies share same base structure
+// ---------------------------------------------------
+let enemies = [];
+let wave = 1;
+let spawnTimer = 0;
 
-  // --- Entities -----------------
-  let lastSpawn = 0;
-  const player = {
-    x: canvas.width/2, y: canvas.height/2, r: 12,
-    color: '#0077ff', hp: CONFIG.playerMaxHp, maxHp: CONFIG.playerMaxHp,
-    speed: 2.6, invuln:0,
-    xp: 0, level: 1, xpNeeded: CONFIG.xpToLevel,
-    weapons: [], // will contain weapon objects (see factory)
-  };
+// SPAWN ENEMY TYPES
+function spawnEnemy() {
+    const typeList = [
+        "circle",      // basic red
+        "square",      // tanky slow
+        "triangle",    // fast weak
+        "tank",
+        "speedster",
+        "healer",
+        "attacker"
+    ];
 
-  const enemies = [];
-  const bullets = [];
-  const effects = []; // simple particles
-  const pickups = [];
+    let type = typeList[Math.floor(Math.random() * Math.min(typeList.length, 2 + Math.floor(wave/2)))];
 
-  // --- Weapons system -------
-  // Each weapon provides: update(dt, state) to act and render perhaps; and can be upgraded by upgrade(name)
-  // We'll implement: RotatingOrb (default), ScatterShot, HomingBolt
+    let x = Math.random()*W;
+    let y = Math.random()*H;
 
-  function createRotatingOrb(stats) {
-    // stats: {count, radius, angleSpeed, dmg}
-    return {
-      id: 'rotorbs',
-      name: 'Rotating Orb',
-      stats: Object.assign({count:1, radius:40, angleSpeed: 2.2, dmg:2}, stats),
-      angle: 0,
-      update(dt, state) {
-        // rotate
-        this.angle += this.stats.angleSpeed * dt * 0.001; // radians per ms -> dt in ms
-        // render orbs and check collision with enemies
-        for (let i=0;i<this.stats.count;i++){
-          const ang = this.angle + (i * (Math.PI*2 / this.stats.count));
-          const ox = state.player.x + Math.cos(ang) * this.stats.radius;
-          const oy = state.player.y + Math.sin(ang) * this.stats.radius;
-          // check collision with enemies
-          for (let e of enemies){
-            const dx = e.x - ox, dy = e.y - oy;
-            const d2 = dx*dx + dy*dy;
-            const rad = e.r + 8; // orb radius
-            if (d2 <= rad*rad){
-              // damage and knockback; apply per-frame small cooldown per enemy to avoid multi hits per ms
-              if (!e._orbHitTime) e._orbHitTime = 0;
-              if (performance.now() - e._orbHitTime > 120){ // 120ms cooldown per enemy-orb contact
-                e._orbHitTime = performance.now();
-                e.hp -= this.stats.dmg;
-                // small knockback
-                const angE = Math.atan2(e.y - state.player.y, e.x - state.player.x);
-                e.x += Math.cos(angE) * 6;
-                e.y += Math.sin(angE) * 6;
-                spawnEffect(e.x, e.y, '#ffcccc', 6);
-              }
-            }
-          }
-        }
-      },
-      render(ctx, state) {
-        ctx.save();
-        for (let i=0;i<this.stats.count;i++){
-          const ang = this.angle + (i * (Math.PI*2 / this.stats.count));
-          const ox = state.player.x + Math.cos(ang) * this.stats.radius;
-          const oy = state.player.y + Math.sin(ang) * this.stats.radius;
-          ctx.beginPath();
-          ctx.fillStyle = '#99ccff';
-          ctx.arc(ox, oy, 8, 0, Math.PI*2);
-          ctx.fill();
-        }
-        ctx.restore();
-      },
-      upgrade(choice){
-        // choice: 'dmg', 'speed', 'count'
-        if (choice === 'dmg') this.stats.dmg += 1;
-        if (choice === 'speed') this.stats.angleSpeed += 0.6;
-        if (choice === 'count') this.stats.count += 1;
-      }
-    };
-  }
+    if (Math.random() < 0.5) x = Math.random() < 0.5 ? -20 : W+20;
+    else y = Math.random() < 0.5 ? -20 : H+20;
 
-  function createScatterShot(stats) {
-    // fires cone bursts automatically at interval
-    return {
-      id:'scatter',
-      name:'Scatter Shot',
-      stats: Object.assign({pellets:5, spread:0.9, speed:6, dmg:3, cooldown:900}, stats),
-      cooldown:0,
-      update(dt, state){
-        this.cooldown -= dt;
-        if (this.cooldown <= 0){
-          this.cooldown = this.stats.cooldown;
-          // fire towards mouse
-          const ang = Math.atan2(mouse.y - state.player.y, mouse.x - state.player.x);
-          for (let i=0;i<this.stats.pellets;i++){
-            const a = ang + (rand(-this.stats.spread, this.stats.spread));
-            bullets.push({
-              x: state.player.x + Math.cos(a)* (state.player.r + 6),
-              y: state.player.y + Math.sin(a)* (state.player.r + 6),
-              vx: Math.cos(a) * this.stats.speed,
-              vy: Math.sin(a) * this.stats.speed,
-              r: 4, dmg: this.stats.dmg, owner:'player', life: 1400
-            });
-          }
-        }
-      },
-      render(){},
-      upgrade(choice){
-        if (choice==='pellets') this.stats.pellets += 2;
-        if (choice==='dmg') this.stats.dmg += 1;
-        if (choice==='cdr') this.stats.cooldown = Math.max(200, this.stats.cooldown - 160);
-      }
-    };
-  }
+    enemies.push(createEnemyType(type, x, y));
+}
 
-  function createHomingBolt(stats) {
-    return {
-      id:'homing',
-      name:'Homing Bolt',
-      stats: Object.assign({count:1, speed:4, dmg:5, homingStrength:0.06, cooldown:1400}, stats),
-      cooldown:0,
-      update(dt,state){
-        this.cooldown -= dt;
-        if (this.cooldown <= 0){
-          this.cooldown = this.stats.cooldown;
-          // spawn homing bolts
-          for (let i=0;i<this.stats.count;i++){
-            bullets.push({
-              x: state.player.x,
-              y: state.player.y,
-              vx: (Math.random()-0.5)*0.6,
-              vy: (Math.random()-0.5)*0.6,
-              r: 6, dmg: this.stats.dmg, owner:'player',
-              life: 3000,
-              homing:true,
-              homingStrength: this.stats.homingStrength,
-              speed: this.stats.speed
-            });
-          }
-        }
-      },
-      render(){},
-      upgrade(choice){
-        if (choice==='count') this.stats.count += 1;
-        if (choice==='dmg') this.stats.dmg += 2;
-        if (choice==='homing') this.stats.homingStrength += 0.03;
-      }
-    };
-  }
+function createEnemyType(type, x, y) {
+    switch(type) {
+        case "circle":
+            return enemyTemplate(x,y, 20, 1.5, 10, "circle","red");
 
-  // weapon factory and definitions
-  const WEAPON_FACTORY = {
-    rotorbs: () => createRotatingOrb(),
-    scatter: () => createScatterShot(),
-    homing: () => createHomingBolt()
-  };
+        case "square":
+            return enemyTemplate(x,y, 50, 0.8, 12, "square","darkred");
 
-  // --- Initial player weapon
-  player.weapons.push(WEAPON_FACTORY.rotorbs());
+        case "triangle":
+            return enemyTemplate(x,y, 12, 2.5, 6, "triangle","red");
 
-  // --- Spawning / Enemy behavior -------
-  function spawnEnemy() {
-    // spawn on edges
-    const side = randInt(0,3);
-    let x, y;
-    if (side===0){ x = rand(0,canvas.width); y = -20; }
-    if (side===1){ x = rand(0,canvas.width); y = canvas.height + 20; }
-    if (side===2){ x = -20; y = rand(0,canvas.height); }
-    if (side===3){ x = canvas.width+20; y = rand(0,canvas.height); }
-    const hp = Math.ceil(CONFIG.enemyBaseHp + (player.level-1) * 1.8 + Math.random()*3);
-    enemies.push({
-      x,y,r: 12, color:'#ff5555', hp,
-      speed: CONFIG.enemyBaseSpeed + Math.min(1.4, player.level * 0.06) + Math.random()*0.3,
-      lastDamageTime:0
-    });
-  }
+        case "tank":
+            return enemyTemplate(x,y, 120, 0.7, 15, "circle","maroon");
 
-  // spawn effect
-  function spawnEffect(x,y,color, count=8){
-    for (let i=0;i<count;i++){
-      effects.push({
-        x,y,vx:rand(-2,2), vy:rand(-2,2), life:rand(220,480), color
-      })
+        case "speedster":
+            return enemyTemplate(x,y, 10, 3.5, 5, "triangle","orange");
+
+        case "healer":
+            return enemyTemplate(x,y, 40, 1.0, 5, "circle","green", true);
+
+        case "attacker":
+            return enemyTemplate(x,y, 25, 1.2, 25, "circle","black");
     }
-  }
+}
 
-  // --- Main loop and updates -----
-  let lastTime = performance.now();
-  let accum = 0;
-  let paused = false;
-  let showCardOverlay = false;
-  let pendingCards = [];
+function enemyTemplate(x,y,hp,spd,dmg,shape,color,healer=false) {
+    return {
+        x, y,
+        hp,
+        speed: spd,
+        dmg,
+        size: 14,
+        shape,
+        color,
+        healer,
+        healCooldown: 0
+    };
+}
 
-  function gameTick(now){
-    const dt = Math.min(40, now - lastTime); // ms
-    lastTime = now;
+// ---------------------------------------------------
+// WEAPONS
+// ---------------------------------------------------
+let weapons = [];
+let addons = [];
 
-    if (!showCardOverlay && !paused) {
-      update(dt);
+// ROTATING ORB
+weapons.push({
+    name:"Rotating Orb",
+    level:1,
+    orbs:1,
+    dmg:2,
+    speed:0.05,
+    angle:0
+});
+
+// Add many other weapons
+const weaponLibrary = {
+    "Rocket Launcher": {
+        create() { return {name:"Rocket Launcher", level:1, cooldown:0, cdMax:40, dmg:20}; }
+    },
+    "Knockback Square": {
+        create() { return {name:"Knockback Square", level:1, size:40, dmg:5}; }
+    },
+    "Frost Shot": {
+        create() { return {name:"Frost Shot", level:1, cooldown:0, cdMax:30, dmg:6, slow:0.4}; }
     }
+};
+
+// ADD-ONS (Fire Orb, Scatter Ring, Lightning Bolt)
+const addonLibrary = {
+    "Fire Orb": {
+        apply() { addons.push({type:"fire", dmg:1}); }
+    },
+    "Scatter Ring": {
+        apply() { addons.push({type:"scatter", count:8, dmg:2}); }
+    },
+    "Lightning Bolt": {
+        apply() { addons.push({type:"lightning", dmg:15}); }
+    }
+};
+
+// ---------------------------------------------------
+// PROJECTILES
+// ---------------------------------------------------
+let projectiles = [];
+
+// ---------------------------------------------------
+// GAME LOOP
+// ---------------------------------------------------
+function update() {
+    movePlayer();
+    updateWeapons();
+    updateEnemies();
+    updateProjectiles();
     render();
-    requestAnimationFrame(gameTick);
-  }
+    requestAnimationFrame(update);
+}
 
-  function update(dt){
-    // spawn enemies periodically
-    if (nowMs() - lastSpawn > CONFIG.spawnInterval){
-      lastSpawn = nowMs();
-      spawnEnemy();
-    }
+// ---------------------------------------------------
+// PLAYER MOVEMENT
+// ---------------------------------------------------
+function movePlayer() {
+    if (keys["w"]) player.y -= player.speed;
+    if (keys["s"]) player.y += player.speed;
+    if (keys["a"]) player.x -= player.speed;
+    if (keys["d"]) player.x += player.speed;
 
-    // player movement
-    let vx = 0, vy = 0;
-    if (input.up) vy -= 1;
-    if (input.down) vy += 1;
-    if (input.left) vx -= 1;
-    if (input.right) vx += 1;
-    // normalize
-    const mag = Math.hypot(vx,vy);
-    if (mag > 0) { vx = vx/mag; vy = vy/mag; }
-    player.x += vx * player.speed;
-    player.y += vy * player.speed;
-    player.x = clamp(player.x, player.r, canvas.width - player.r);
-    player.y = clamp(player.y, player.r, canvas.height - player.r);
+    player.x = Math.max(0, Math.min(W, player.x));
+    player.y = Math.max(0, Math.min(H, player.y));
+}
 
-    // update weapons
-    for (let w of player.weapons) {
-      if (w.update) w.update(dt, {player});
-    }
-
-    // enemies: move toward player and collide
-    for (let i = enemies.length-1; i>=0; i--){
-      const e = enemies[i];
-      const ang = Math.atan2(player.y - e.y, player.x - e.x);
-      e.x += Math.cos(ang) * e.speed * dt * 0.12;
-      e.y += Math.sin(ang) * e.speed * dt * 0.12;
-
-      // if touches player
-      if (circleCollision(e, player)) {
-        if (nowMs() - e.lastDamageTime > 450) {
-          e.lastDamageTime = nowMs();
-          player.hp -= 2;
-          player.invuln = 300;
-          spawnEffect(player.x, player.y, '#ffaaaa', 12);
-          // knockback enemy
-          const backAng = Math.atan2(e.y - player.y, e.x - player.x);
-          e.x += Math.cos(backAng)*12;
-          e.y += Math.sin(backAng)*12;
-          // death check handled below
+// ---------------------------------------------------
+// WEAPON BEHAVIOR
+// ---------------------------------------------------
+function updateWeapons() {
+    for (let w of weapons) {
+        if (w.name === "Rotating Orb") {
+            w.angle += w.speed;
         }
-      }
 
-      // enemy death
-      if (e.hp <= 0) {
-        // spawn pickup xp and particles
-        pickups.push({x:e.x, y:e.y, r:6, type:'xp', value:CONFIG.xpPerKill, life:4000});
-        spawnEffect(e.x, e.y, '#ff9999', 16);
-        enemies.splice(i,1);
-      }
-    }
-
-    // bullets update
-    for (let i = bullets.length-1; i>=0; i--){
-      const b = bullets[i];
-      if (b.homing) {
-        // find nearest enemy
-        let target = null;
-        let bestDist = 1e9;
-        for (let e of enemies){
-          const d = (e.x-b.x)*(e.x-b.x)+(e.y-b.y)*(e.y-b.y);
-          if (d < bestDist) { bestDist = d; target = e; }
+        if (w.name === "Rocket Launcher") {
+            w.cooldown--;
+            if (w.cooldown <= 0) {
+                w.cooldown = w.cdMax;
+                if (enemies.length > 0) {
+                    let e = enemies[Math.floor(Math.random()*enemies.length)];
+                    projectiles.push({
+                        x:player.x,
+                        y:player.y,
+                        tx:e.x,
+                        ty:e.y,
+                        speed:3,
+                        dmg:w.dmg,
+                        type:"rocket"
+                    });
+                }
+            }
         }
-        if (target){
-          const ang = Math.atan2(target.y - b.y, target.x - b.x);
-          const cv = Math.cos(ang)*b.speed;
-          const sv = Math.sin(ang)*b.speed;
-          b.vx += (cv - b.vx) * b.homingStrength;
-          b.vy += (sv - b.vy) * b.homingStrength;
+
+        if (w.name === "Frost Shot") {
+            w.cooldown--;
+            if (w.cooldown <= 0) {
+                w.cooldown = w.cdMax;
+                projectiles.push({
+                    x:player.x,
+                    y:player.y,
+                    angle:Math.random()*Math.PI*2,
+                    speed:4,
+                    dmg:w.dmg,
+                    slow:w.slow,
+                    type:"frost"
+                });
+            }
         }
-      }
-      b.x += b.vx;
-      b.y += b.vy;
-      b.life -= dt;
-      // check collision vs enemies
-      for (let j = enemies.length-1; j>=0; j--){
-        const e = enemies[j];
-        if (circleCollision(b, e)){
-          e.hp -= b.dmg;
-          spawnEffect(b.x, b.y, '#ffcc99', 6);
-          // projectile disappears
-          bullets.splice(i,1);
-          break;
+    }
+}
+
+// ---------------------------------------------------
+// PROJECTILES UPDATE
+// ---------------------------------------------------
+function updateProjectiles() {
+    for (let i=projectiles.length-1;i>=0;i--) {
+        let p = projectiles[i];
+
+        if (p.type === "rocket") {
+            let ang = Math.atan2(p.ty - p.y, p.tx - p.x);
+            p.x += Math.cos(ang)*p.speed;
+            p.y += Math.sin(ang)*p.speed;
         }
-      }
-      if (b && b.life <= 0) {
-        const idx = bullets.indexOf(b);
-        if (idx >= 0) bullets.splice(idx,1);
-      }
-    }
 
-    // pickups
-    for (let i = pickups.length-1; i>=0; i--) {
-      const p = pickups[i];
-      p.life -= dt;
-      // auto attract to player
-      const d = dist(p, player);
-      if (d < 120) {
-        const a = angleTo(p, player);
-        p.x += Math.cos(a)* (1 + (120-d)/50);
-        p.y += Math.sin(a)* (1 + (120-d)/50);
-      }
-      if (circleCollision(p, player)) {
-        if (p.type === 'xp') {
-          player.xp += p.value;
-          checkLevelUp();
+        if (p.type === "frost") {
+            p.x += Math.cos(p.angle)*p.speed;
+            p.y += Math.sin(p.angle)*p.speed;
         }
-        pickups.splice(i,1);
-      } else if (p.life <= 0) {
-        pickups.splice(i,1);
-      }
-    }
 
-    // effects
-    for (let i = effects.length-1; i>=0; i--) {
-      const ef = effects[i];
-      ef.x += ef.vx;
-      ef.y += ef.vy;
-      ef.life -= dt;
-      ef.vy += 0.06;
-      ef.vx *= 0.98;
-      ef.vy *= 0.98;
-      if (ef.life <= 0) effects.splice(i,1);
-    }
+        for (let j=enemies.length-1;j>=0;j--) {
+            let e = enemies[j];
+            let dx = e.x - p.x;
+            let dy = e.y - p.y;
+            if (dx*dx + dy*dy < 20*20) {
 
-    // player invulnerability timer
-    if (player.invuln > 0) player.invuln -= dt;
+                e.hp -= p.dmg;
 
-    // clamp hp
-    if (player.hp <= 0) {
-      player.hp = 0;
-      // respawn simple
-      player.x = canvas.width/2; player.y = canvas.height/2;
-      player.hp = player.maxHp;
-      player.xp = Math.max(0, player.xp - Math.floor(player.xp*0.4));
-      spawnEffect(player.x, player.y, '#ffdddd', 24);
-      enemies.length = 0; bullets.length = 0; pickups.length = 0;
-    }
+                if (p.type === "frost") e.speed *= p.slow;
 
-    // update HUD
-    hud.hpBar.style.width = (player.hp / player.maxHp * 100) + '%';
-    hud.stats.innerHTML = `XP: ${player.xp} &nbsp;|&nbsp; Level: ${player.level} &nbsp;|&nbsp; Weapon: ${player.weapons[0].name}`;
-
-  } // end update
-
-  function checkLevelUp(){
-    while (player.xp >= player.xpNeeded){
-      player.xp -= player.xpNeeded;
-      player.level += 1;
-      player.xpNeeded = Math.ceil(player.xpNeeded * 1.6);
-      // trigger card choice
-      presentCards();
-    }
-  }
-
-  // Presents 3 choices (overlay). Building simple card options based on current weapons and new ones.
-  function presentCards(){
-    showCardOverlay = true;
-    pendingCards = []; // will be objects {title,desc,apply}
-    // choose 1-2 upgrades and 1 new weapon typically
-    const options = [];
-    // create an upgrade card for each current weapon (randomly)
-    const upgradeCandidates = [];
-    for (let w of player.weapons){
-      upgradeCandidates.push(w);
-    }
-    // ensure at least one new weapon option if we have <3 weapons
-    const newWeaponsPool = ['scatter','homing','rotorbs']; // rotorbs might be upgrade too
-    // generate up to 3 cards
-    while (options.length < 3){
-      if (Math.random() < 0.55 && upgradeCandidates.length > 0) {
-        // pick a random current weapon and a random upgrade path
-        const w = upgradeCandidates[randInt(0, upgradeCandidates.length-1)];
-        const choices = {
-          rotorbs: ['dmg','speed','count'],
-          scatter: ['pellets','dmg','cdr'],
-          homing: ['count','dmg','homing']
-        }[w.id] || ['dmg'];
-        const choice = choices[randInt(0, choices.length-1)];
-        const title = `${w.name} +${choice.toUpperCase()}`;
-        options.push({
-          title,
-          desc: `Upgrade your ${w.name} (${choice}).`,
-          apply: () => { w.upgrade(choice); }
-        });
-      } else {
-        // new weapon pick that's not already present (if possible)
-        const candidateIds = newWeaponsPool.filter(id => !player.weapons.some(w=>w.id===id));
-        if (candidateIds.length === 0) {
-          // fallback to upgrade
-          continue;
+                projectiles.splice(i,1);
+                break;
+            }
         }
-        const id = candidateIds[randInt(0,candidateIds.length-1)];
-        const wName = {scatter:'Scatter Shot', homing:'Homing Bolt', rotorbs:'Rotating Orb'}[id]||id;
-        options.push({
-          title: `Acquire: ${wName}`,
-          desc: `Gain a new weapon: ${wName}.`,
-          apply: () => {
-            player.weapons.push(WEAPON_FACTORY[id]());
-          }
-        });
-      }
     }
-    // create DOM overlay
-    createCardOverlay(options.map(o => ({
-      title:o.title, desc:o.desc, apply:o.apply
-    })));
-  }
+}
 
-  // overlay creation
-  function createCardOverlay(cards){
-    // build element nodes
-    const ov = document.createElement('div');
-    ov.className = 'overlay';
-    const grid = document.createElement('div');
-    grid.className = 'card-grid';
-    ov.appendChild(grid);
-
-    cards.forEach((c, idx) => {
-      const card = document.createElement('div');
-      card.className = 'card';
-      const h = document.createElement('h3'); h.textContent = c.title;
-      const p = document.createElement('p'); p.textContent = c.desc;
-      const extra = document.createElement('div'); extra.className='muted small'; extra.textContent = 'Click to choose this upgrade';
-      card.appendChild(h); card.appendChild(p); card.appendChild(extra);
-      card.addEventListener('click', () => {
-        // apply
-        c.apply();
-        document.body.removeChild(ov);
-        showCardOverlay = false;
-      });
-      grid.appendChild(card);
-    });
-
-    document.body.appendChild(ov);
-  }
-
-  // --- Render -----------------
-  function render(){
-    // clear background (white)
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-
-    // draw pickups
-    for (let p of pickups){
-      ctx.beginPath();
-      ctx.fillStyle = '#ffd966';
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-      ctx.fill();
+// ---------------------------------------------------
+// ENEMY UPDATE
+// ---------------------------------------------------
+function updateEnemies() {
+    spawnTimer++;
+    if (spawnTimer > 60 - Math.min(40, wave*2)) {
+        spawnTimer = 0;
+        spawnEnemy();
     }
 
-    // draw enemies (red)
-    for (let e of enemies){
-      ctx.save();
-      ctx.beginPath();
-      ctx.fillStyle = e.color;
-      ctx.arc(e.x, e.y, e.r, 0, Math.PI*2);
-      ctx.fill();
-      // hp bar
-      const hw = e.r*2;
-      ctx.fillStyle = '#00000022';
-      ctx.fillRect(e.x - e.r, e.y - e.r - 9, hw, 4);
-      ctx.fillStyle = '#ffeeee';
-      const frac = clamp(e.hp / (CONFIG.enemyBaseHp + (player.level-1)*1.8 + 0.001), 0, 1);
-      ctx.fillRect(e.x - e.r, e.y - e.r - 9, hw*frac, 4);
-      ctx.restore();
+    if (Math.random() < 0.002) wave++;
+
+    for (let i=enemies.length-1;i>=0;i--) {
+        let e = enemies[i];
+
+        // healer ability
+        if (e.healer) {
+            e.healCooldown--;
+            if (e.healCooldown <= 0) {
+                e.healCooldown = 120;
+                for (let h of enemies) {
+                    if (h !== e && Math.hypot(h.x-e.x, h.y-e.y) < 120)
+                        h.hp += 4;
+                }
+            }
+        }
+
+        // move towards player
+        let ang = Math.atan2(player.y - e.y, player.x - e.x);
+        e.x += Math.cos(ang)*e.speed;
+        e.y += Math.sin(ang)*e.speed;
+
+        // collision with player
+        if (Math.hypot(e.x-player.x, e.y-player.y) < e.size + player.size) {
+            player.hp -= e.dmg * 0.02;
+        }
+
+        // enemy death
+        if (e.hp <= 0) {
+            enemies.splice(i,1);
+            gainXP(5);
+        }
+    }
+}
+
+// ---------------------------------------------------
+// XP + LEVEL
+// ---------------------------------------------------
+function gainXP(amount) {
+    player.xp += amount;
+    if (player.xp >= player.xpNeeded) {
+        player.xp -= player.xpNeeded;
+        player.level++;
+        player.xpNeeded += 10;
+        giveUpgradeChoices();
+    }
+}
+
+// ---------------------------------------------------
+// UPGRADE SYSTEM
+// ---------------------------------------------------
+function giveUpgradeChoices() {
+    // Very simple alert-based selection
+    let choices = [
+        "Rotating Orb Upgrade",
+        "Rocket Launcher",
+        "Knockback Square",
+        "Frost Shot",
+        "Fire Orb",
+        "Scatter Ring",
+        "Lightning Bolt"
+    ];
+
+    let pick = prompt("Choose upgrade:\n" + choices.join("\n"));
+
+    if (pick === "Rotating Orb Upgrade") {
+        let orb = weapons.find(w=>w.name==="Rotating Orb");
+        orb.orbs++;
+        orb.dmg += 1;
     }
 
-    // render bullets
-    for (let b of bullets){
-      ctx.beginPath();
-      ctx.fillStyle = '#ff9900';
-      if (b.homing) ctx.fillStyle = '#cc88ff';
-      ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
-      ctx.fill();
+    if (weaponLibrary[pick]) {
+        weapons.push(weaponLibrary[pick].create());
     }
 
-    // render player shield (if invuln)
-    if (player.invuln > 0){
-      ctx.beginPath();
-      ctx.strokeStyle = '#ffdddd';
-      ctx.lineWidth = 6;
-      ctx.arc(player.x, player.y, player.r + 6, 0, Math.PI*2);
-      ctx.stroke();
+    if (addonLibrary[pick]) {
+        addonLibrary[pick].apply();
     }
+}
 
-    // render rotating orbs & other weapon visuals
-    for (let w of player.weapons) {
-      if (w.render) w.render(ctx, {player});
-    }
+// ---------------------------------------------------
+// RENDERING
+// ---------------------------------------------------
+function render() {
+    ctx.fillStyle = "white";
+    ctx.fillRect(0,0,W,H);
 
-    // draw player
+    // player
+    ctx.fillStyle = "blue";
     ctx.beginPath();
-    ctx.fillStyle = player.color;
-    ctx.arc(player.x, player.y, player.r, 0, Math.PI*2);
+    ctx.arc(player.x, player.y, player.size, 0, Math.PI*2);
     ctx.fill();
 
-    // effects on top
-    for (let ef of effects){
-      ctx.beginPath();
-      ctx.fillStyle = ef.color;
-      ctx.globalAlpha = clamp(ef.life / 400, 0, 1);
-      ctx.arc(ef.x, ef.y, 3, 0, Math.PI*2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
+    // rotating orb draw
+    for (let w of weapons) {
+        if (w.name === "Rotating Orb") {
+            for (let i=0;i<w.orbs;i++) {
+                let a = w.angle + (Math.PI*2)*(i/w.orbs);
+                let ox = player.x + Math.cos(a)*60;
+                let oy = player.y + Math.sin(a)*60;
+
+                ctx.fillStyle = "purple";
+                ctx.beginPath();
+                ctx.arc(ox, oy, 8, 0, Math.PI*2);
+                ctx.fill();
+
+                // orb damage
+                for (let e of enemies) {
+                    if (Math.hypot(e.x-ox, e.y-oy) < e.size+8)
+                        e.hp -= w.dmg*0.1;
+                }
+            }
+        }
     }
 
-    // quick debug text bottom-left
-    ctx.fillStyle = '#333';
-    ctx.font = '12px system-ui';
-    ctx.fillText(`Enemies: ${enemies.length}  Bullets: ${bullets.length}  XP:${player.xp}/${player.xpNeeded}`, 12, canvas.height - 8);
-  }
-
-  // helper for ms
-  function nowMs(){ return performance.now(); }
-
-  // start spawning
-  lastSpawn = nowMs();
-
-  // start game loop
-  requestAnimationFrame(gameTick);
-
-  // slight difficulty ramp timer
-  setInterval(()=> {
-    if (!showCardOverlay) {
-      // occasionally spawn extra fast enemy
-      if (Math.random() < 0.45) spawnEnemy();
+    // projectiles
+    ctx.fillStyle = "black";
+    for (let p of projectiles) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI*2);
+        ctx.fill();
     }
-  }, 3000);
 
-  // small helper: clicking canvas can aim weapons
-  canvas.addEventListener('click', (e) => {
-    // nothing special for now
-  });
+    // enemies
+    for (let e of enemies) {
+        ctx.fillStyle = e.color;
 
-  // keep canvas responsive-ish
-  function resizeCanvas() {
-    // keep fixed in-page size but allow scaling
-    const w = Math.min(window.innerWidth - 40, 1200);
-    const h = Math.min(window.innerHeight - 120, 800);
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
-  }
-  window.addEventListener('resize', resizeCanvas);
-  resizeCanvas();
+        if (e.shape === "circle") {
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, e.size, 0, Math.PI*2);
+            ctx.fill();
+        }
 
-  // Auto-fire for scatter/homing is handled in update. You can add new weapon types easily in WEAPON_FACTORY.
-})();
+        if (e.shape === "square") {
+            ctx.fillRect(e.x-e.size, e.y-e.size, e.size*2, e.size*2);
+        }
+
+        if (e.shape === "triangle") {
+            ctx.beginPath();
+            ctx.moveTo(e.x, e.y-e.size);
+            ctx.lineTo(e.x-e.size, e.y+e.size);
+            ctx.lineTo(e.x+e.size, e.y+e.size);
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+
+    // UI
+    ctx.fillStyle = "black";
+    ctx.fillText("HP: " + Math.floor(player.hp), 20,20);
+    ctx.fillText("XP: " + player.xp + "/" + player.xpNeeded, 20,40);
+    ctx.fillText("Wave: " + wave, 20,60);
+}
+
+// ---------------------------------------------------
+update();
 </script>
 </body>
 </html>
