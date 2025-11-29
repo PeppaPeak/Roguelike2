@@ -2,55 +2,44 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Roguelike</title>
+<title>Roguelike EXACT MATCH</title>
 <style>
-    body { margin:0; overflow:hidden; background:#111; }
-    canvas { background:#111; display:block; margin:0 auto; }
+    body { margin:0; overflow:hidden; }
+    canvas { background:#ffffff; display:block; margin:0 auto; }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
-
 <script>
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 canvas.width = 900;
 canvas.height = 600;
 
-// WORLD BORDER
-const BORDER = { x:50, y:50, w:800, h:500 };
+// BORDER
+const BORDER = { x:20, y:20, w:860, h:560 };
 
-// PLAYER
+// PLAYER (blue)
 const player = {
     x: 450,
     y: 300,
-    size: 20,
+    size: 15,
     speed: 3,
     hp: 100,
     maxHp: 100,
-    damage: 10,
     vx: 0,
     vy: 0
 };
 
-// WEAPONS
+// WEAPONS (rotating orb)
 let weapons = [];
 function spawnWeapons() {
-    weapons = [];
-    for (let i = 0; i < 12; i++) {
-        weapons.push({
-            angle: (Math.PI * 2 / 12) * i,
-            radius: 60,
-            size: 12,
-            speed: 0.05 + Math.random()*0.05
-        });
-    }
+    weapons = [{ angle: 0, radius: 45, size: 10, speed: 0.07 }];
 }
 spawnWeapons();
 
 // ENEMIES
 let enemies = [];
-
 function spawnEnemy(type) {
     let enemy = {
         type: type,
@@ -58,17 +47,11 @@ function spawnEnemy(type) {
         y: Math.random() * (BORDER.h - 40) + BORDER.y + 20,
         vx: 0,
         vy: 0,
-        size: type === "triangle" ? 18 : 25,
-        color: type === "triangle" ? "#ff5f5f" :
-               type === "square"   ? "#5fb0ff" : "#90ff6c",
-        hp: type === "triangle" ? 20 :
-            type === "square"   ? 90 : 45,
-        maxHp: type === "triangle" ? 20 :
-               type === "square"   ? 90 : 45,
-        speed: type === "triangle" ? 3.5 :
-               type === "square"   ? 1.3 : 2,
-        damage: type === "triangle" ? 5 :
-                 type === "square"   ? 15 : 10
+        size: type === "triangle" ? 16 : type === "square" ? 20 : 18,
+        hp: type === "triangle" ? 20 : type === "square" ? 70 : 40,
+        maxHp: type === "triangle" ? 20 : type === "square" ? 70 : 40,
+        speed: type === "triangle" ? 3.3 : type === "square" ? 1.4 : 2.2,
+        damage: type === "triangle" ? 4 : type === "square" ? 12 : 8
     };
     enemies.push(enemy);
 }
@@ -77,172 +60,182 @@ function spawnEnemy(type) {
 let wave = 1;
 let waveTimer = 0;
 
-// UTIL
 function dist(a,b,c,d){ return Math.hypot(a-c,b-d); }
 
-// FIX ENEMIES GETTING STUCK
-function separate(a, b) {
-    const d = dist(a.x, a.y, b.x, b.y);
-    const overlap = a.size + b.size - d;
-    if (overlap > 0) {
-        let nx = (a.x - b.x) / d;
-        let ny = (a.y - b.y) / d;
-        a.x += nx * overlap * 0.5;
-        a.y += ny * overlap * 0.5;
-        b.x -= nx * overlap * 0.5;
-        b.y -= ny * overlap * 0.5;
+// PARTICLES
+let particles = [];
+function spawnParticles(x,y,color){
+    for(let i=0;i<6;i++){
+        particles.push({
+            x:x,
+            y:y,
+            vx:(Math.random()-0.5)*3,
+            vy:(Math.random()-0.5)*3,
+            life:15,
+            color:color
+        });
     }
 }
 
-// GAME LOOP
-function update() {
+function updateParticles(){
+    for(let i=particles.length-1;i>=0;i--){
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+        if(p.life <= 0) particles.splice(i,1);
+    }
+}
 
-    // PLAYER MOVEMENT
+// FIX ENEMY OVERLAP
+function separate(e){
+    let d = dist(e.x,e.y,player.x,player.y);
+    let minDist = e.size + player.size;
+    if(d < minDist){
+        let push = (minDist - d) * 0.4;
+        let ang = Math.atan2(e.y-player.y, e.x-player.x);
+        e.x += Math.cos(ang)*push;
+        e.y += Math.sin(ang)*push;
+    }
+}
+
+function update(){
+    // PLAYER MOVE
     player.x += player.vx;
     player.y += player.vy;
 
-    // CONSTRAIN PLAYER
     player.x = Math.max(BORDER.x + player.size, Math.min(BORDER.x+BORDER.w-player.size, player.x));
     player.y = Math.max(BORDER.y + player.size, Math.min(BORDER.y+BORDER.h-player.size, player.y));
 
-    // WEAPON ORBIT
-    weapons.forEach(w => {
-        w.angle += w.speed;
-    });
+    // WEAPONS
+    weapons.forEach(w => w.angle += w.speed);
 
-    // WAVE SYSTEM
+    // WAVES
     waveTimer--;
-    if (waveTimer <= 0) {
-        for (let i = 0; i < wave * 2; i++) spawnEnemy("normal");
-        if (wave >= 2) spawnEnemy("square");
-        if (wave >= 3) spawnEnemy("triangle");
+    if(waveTimer <= 0){
+        for(let i=0;i<wave*2;i++) spawnEnemy("normal");
+        if(wave >= 2) spawnEnemy("square");
+        if(wave >= 3) spawnEnemy("triangle");
         wave++;
         waveTimer = 600;
     }
 
-    // ENEMY MOVEMENT & FIXED DAMAGE SYSTEM
+    // ENEMIES
     enemies.forEach(e => {
-        let angle = Math.atan2(player.y - e.y, player.x - e.x);
-        e.vx = Math.cos(angle) * e.speed;
-        e.vy = Math.sin(angle) * e.speed;
+        let ang = Math.atan2(player.y-e.y, player.x-e.x);
+        e.vx = Math.cos(ang)*e.speed;
+        e.vy = Math.sin(ang)*e.speed;
         e.x += e.vx;
         e.y += e.vy;
 
-        // ---- FIXED DAMAGE LOGIC ----
-        const d = dist(e.x, e.y, player.x, player.y);
-        const hitRange = e.size + player.size - 4; // ← 4px safety buffer (fixes random damage)
+        separate(e);
 
-        if (d < hitRange) {
-            // Deal damage (smooth)
+        let d = dist(e.x,e.y,player.x,player.y);
+        let hitDist = e.size + player.size - 3;
+
+        if(d < hitDist){
             player.hp -= e.damage * 0.02;
-
-            // Push enemy back cleanly
-            let nx = (e.x - player.x) / d;
-            let ny = (e.y - player.y) / d;
-            e.x += nx * 3;
-            e.y += ny * 3;
-
-        } else if (d < e.size + player.size) {
-            // Close but NOT touching → push back with NO damage
-            let nx = (e.x - player.x) / d;
-            let ny = (e.y - player.y) / d;
-            e.x += nx * 1.5;
-            e.y += ny * 1.5;
+            let nx = (e.x-player.x)/d;
+            let ny = (e.y-player.y)/d;
+            e.x += nx*2.5;
+            e.y += ny*2.5;
         }
-        // ---------------------------------
     });
 
-    // FIX ENEMIES COLLIDING INSIDE EACH OTHER
-    for (let i = 0; i < enemies.length; i++) {
-        for (let j = i+1; j < enemies.length; j++) {
-            separate(enemies[i], enemies[j]);
-        }
-    }
-
-    // WEAPON COLLISIONS
-    enemies.forEach((e, ei) => {
-        weapons.forEach(w => {
+    // WEAPON COLLISION
+    enemies.forEach((e,ei)=>{
+        weapons.forEach(w=>{
             let wx = player.x + Math.cos(w.angle)*w.radius;
             let wy = player.y + Math.sin(w.angle)*w.radius;
-            if (dist(wx, wy, e.x, e.y) < e.size + w.size) {
-                e.hp -= player.damage;
-                if (e.hp <= 0) enemies.splice(ei,1);
+            if(dist(wx,wy,e.x,e.y) < e.size + w.size){
+                e.hp -= 10;
+                spawnParticles(e.x,e.y,"red");
+                let kx = (e.x-wx)*0.4;
+                let ky = (e.y-wy)*0.4;
+                e.x += kx;
+                e.y += ky;
+                if(e.hp <= 0) enemies.splice(ei,1);
             }
         });
     });
+
+    updateParticles();
 }
 
-function draw() {
+function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // BORDER
-    ctx.strokeStyle = "#444";
+    // BORDER (black)
+    ctx.strokeStyle = "black";
     ctx.lineWidth = 4;
     ctx.strokeRect(BORDER.x, BORDER.y, BORDER.w, BORDER.h);
 
-    // PLAYER
-    ctx.fillStyle = "#fff";
+    // PLAYER (blue circle)
+    ctx.fillStyle = "blue";
     ctx.beginPath();
-    ctx.arc(player.x, player.y, player.size, 0, Math.PI*2);
+    ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
     ctx.fill();
 
-    // WEAPONS
+    // WEAPONS (blue)
     weapons.forEach(w=>{
         let wx = player.x + Math.cos(w.angle)*w.radius;
         let wy = player.y + Math.sin(w.angle)*w.radius;
-        ctx.fillStyle = "#ffd966";
+        ctx.fillStyle = "blue";
         ctx.beginPath();
-        ctx.arc(wx, wy, w.size, 0, Math.PI*2);
+        ctx.arc(wx,wy,w.size,0,Math.PI*2);
         ctx.fill();
     });
 
-    // ENEMIES + HP BARS
+    // ENEMIES (RED, SQUARE, TRIANGLE)
     enemies.forEach(e=>{
-        ctx.fillStyle = e.color;
-
-        if (e.type === "triangle") {
+        ctx.fillStyle = "red";
+        if(e.type === "normal"){
+            ctx.beginPath();
+            ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
+            ctx.fill();
+        } else if(e.type === "square"){
+            ctx.fillRect(e.x-e.size, e.y-e.size, e.size*2, e.size*2);
+        } else if(e.type === "triangle"){
             ctx.beginPath();
             ctx.moveTo(e.x, e.y - e.size);
             ctx.lineTo(e.x - e.size, e.y + e.size);
             ctx.lineTo(e.x + e.size, e.y + e.size);
             ctx.closePath();
             ctx.fill();
-        } else {
-            ctx.fillRect(e.x - e.size, e.y - e.size, e.size*2, e.size*2);
         }
 
-        // lighter HP bar
-        let light = e.color + "88";
-        let barW = (e.hp / e.maxHp) * e.size*2;
-
-        ctx.fillStyle = light;
-        ctx.fillRect(e.x - e.size, e.y - e.size - 8, barW, 5);
+        // HP BAR (light red)
+        ctx.fillStyle = "#ff9999";
+        let bw = (e.hp/e.maxHp)*(e.size*2);
+        ctx.fillRect(e.x-e.size, e.y-e.size-6, bw, 4);
     });
 
-    // PLAYER HP BAR
-    ctx.fillStyle = "#ff4444";
-    ctx.fillRect(20, 20, 200*(player.hp/player.maxHp), 20);
-    ctx.strokeStyle = "#fff";
+    // PARTICLES
+    particles.forEach(p=>{
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x,p.y,3,3);
+    });
+
+    // PLAYER HP
+    ctx.fillStyle = "red";
+    ctx.fillRect(20,20, player.hp*2, 20);
+    ctx.strokeStyle = "black";
     ctx.strokeRect(20,20,200,20);
 }
 
-function loop() {
-    update();
-    draw();
-    requestAnimationFrame(loop);
-}
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
 loop();
 
 // INPUT
-document.addEventListener("keydown", e=>{
-    if (e.key==="w") player.vy = -player.speed;
-    if (e.key==="s") player.vy =  player.speed;
-    if (e.key==="a") player.vx = -player.speed;
-    if (e.key==="d") player.vx =  player.speed;
+addEventListener("keydown", e=>{
+    if(e.key==="w") player.vy = -player.speed;
+    if(e.key==="s") player.vy =  player.speed;
+    if(e.key==="a") player.vx = -player.speed;
+    if(e.key==="d") player.vx =  player.speed;
 });
-document.addEventListener("keyup", e=>{
-    if (e.key==="w"||e.key==="s") player.vy = 0;
-    if (e.key==="a"||e.key==="d") player.vx = 0;
+addEventListener("keyup", e=>{
+    if(e.key==="w"||e.key==="s") player.vy = 0;
+    if(e.key==="a"||e.key==="d") player.vx = 0;
 });
 </script>
 </body>
