@@ -33,7 +33,7 @@ const player = {
     vy: 0
 };
 
-// PLAYER ATTACK ORBS (auto-rotate weapons)
+// WEAPONS
 let weapons = [];
 function spawnWeapons() {
     weapons = [];
@@ -120,7 +120,7 @@ function update() {
         waveTimer = 600;
     }
 
-    // ENEMY MOVEMENT + FIX PLAYER RANDOM DAMAGE
+    // ENEMY MOVEMENT & FIXED DAMAGE SYSTEM
     enemies.forEach(e => {
         let angle = Math.atan2(player.y - e.y, player.x - e.x);
         e.vx = Math.cos(angle) * e.speed;
@@ -128,19 +128,31 @@ function update() {
         e.x += e.vx;
         e.y += e.vy;
 
-        // enemy → player collision
+        // ---- FIXED DAMAGE LOGIC ----
         const d = dist(e.x, e.y, player.x, player.y);
-        if (d < e.size + player.size) {
-            player.hp -= e.damage * 0.02; // smooth damage, no random spikes
-            // push enemy away
+        const hitRange = e.size + player.size - 4; // ← 4px safety buffer (fixes random damage)
+
+        if (d < hitRange) {
+            // Deal damage (smooth)
+            player.hp -= e.damage * 0.02;
+
+            // Push enemy back cleanly
             let nx = (e.x - player.x) / d;
             let ny = (e.y - player.y) / d;
-            e.x += nx * 2;
-            e.y += ny * 2;
+            e.x += nx * 3;
+            e.y += ny * 3;
+
+        } else if (d < e.size + player.size) {
+            // Close but NOT touching → push back with NO damage
+            let nx = (e.x - player.x) / d;
+            let ny = (e.y - player.y) / d;
+            e.x += nx * 1.5;
+            e.y += ny * 1.5;
         }
+        // ---------------------------------
     });
 
-    // FIX ENEMIES CLUMPING & PHASING
+    // FIX ENEMIES COLLIDING INSIDE EACH OTHER
     for (let i = 0; i < enemies.length; i++) {
         for (let j = i+1; j < enemies.length; j++) {
             separate(enemies[i], enemies[j]);
@@ -184,7 +196,7 @@ function draw() {
         ctx.fill();
     });
 
-    // ENEMIES + HEALTH BARS
+    // ENEMIES + HP BARS
     enemies.forEach(e=>{
         ctx.fillStyle = e.color;
 
@@ -199,7 +211,7 @@ function draw() {
             ctx.fillRect(e.x - e.size, e.y - e.size, e.size*2, e.size*2);
         }
 
-        // light color health bar
+        // lighter HP bar
         let light = e.color + "88";
         let barW = (e.hp / e.maxHp) * e.size*2;
 
